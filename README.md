@@ -1,4 +1,4 @@
-# llamacpp-discover
+# opencode-llamacpp-discover
 
 An [OpenCode](https://opencode.ai) **v2** plugin that auto-detects the model
 loaded in a local [llama.cpp](https://github.com/ggml-org/llama.cpp)
