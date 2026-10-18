@@ -46,7 +46,7 @@ only covered by fixtures, not by real servers.
 1. Clone the repository anywhere:
 
    ```bash
-   git clone https://github.com/halilcagriakkuzu/llamacpp-discover.git
+   git clone https://github.com/halilcagriakkuzu/opencode-llamacpp-discover.git
    ```
 
 2. Add it to your OpenCode config (global `~/.config/opencode/opencode.jsonc`
@@ -57,7 +57,7 @@ only covered by fixtures, not by real servers.
    {
      "plugins": [
        {
-         "package": "/absolute/path/to/llamacpp-discover",
+         "package": "/absolute/path/to/opencode-llamacpp-discover",
          "options": { "baseURL": "http://127.0.0.1:8080/v1" }
        }
      ]
