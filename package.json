@@ -1,0 +1,16 @@
+{
+  "name": "opencode-llamacpp-discover",
+  "version": "0.1.0",
+  "description": "OpenCode v2 plugin that auto-discovers the model loaded in a local llama.cpp server (context, thinking levels, vision, tools).",
+  "license": "Unlicense",
+  "type": "module",
+  "keywords": ["opencode", "opencode-plugin", "llama.cpp", "llama-server", "local-llm"],
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "peerDependencies": {
+    "@opencode/plugin": "*",
+    "effect": "*"
+  }
+}
