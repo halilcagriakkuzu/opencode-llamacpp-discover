@@ -72,7 +72,13 @@ needed. Do not use both options at once, or the plugin loads twice.
 
 ### Verify
 
-1. Restart OpenCode.
+1. Restart OpenCode. If it runs as a background service, restart it with:
+
+   ```bash
+   opencode service restart
+   ```
+
+   Otherwise just quit and start OpenCode again.
 2. Open the model picker: the `llama` provider should list the model loaded in
    llama-server, with its real context size and thinking variants.
 3. Look for a `[llamacpp-discover]` summary line in the OpenCode log
@@ -81,7 +87,7 @@ needed. Do not use both options at once, or the plugin loads twice.
 ### Update and uninstall
 
 - Update: `git pull` in the clone (Option A) or copy `src/index.ts` again
-  (Option B), then restart OpenCode.
+  (Option B), then restart OpenCode (`opencode service restart`).
 - Uninstall: remove the `plugins` entry or the copied file, then restart.
   The plugin never writes to your config, so nothing else needs cleaning up.
 
