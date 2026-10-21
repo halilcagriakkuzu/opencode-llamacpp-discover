@@ -14,6 +14,9 @@ It reads everything from llama-server's own endpoints (`/v1/models`, `/props`)
 - **Vision** — image input only when the server has an `mmproj` loaded
 - **Tools** — tool-call support
 - **Output limit** — from the server, with a fallback when it is unlimited
+- **Idle-sleeping servers** — works with `--sleep-idle-seconds`: the server
+  still serves model metadata, so the model is registered and llama.cpp loads
+  it on the first request
 
 If no provider entry exists in your config, the plugin creates one at runtime
 (it never writes to your config files).
@@ -30,16 +33,74 @@ only covered by fixtures, not by real servers.
 
 ## Install
 
-### Prerequisites
+One command, from a clone of this repository:
 
-- OpenCode v2 (check with `opencode --version`).
-- A running `llama-server`, for example:
+```bash
+git clone https://github.com/halilcagriakkuzu/opencode-llamacpp-discover.git
+cd opencode-llamacpp-discover
+./install.sh
+```
+
+That is the whole install. It needs OpenCode v2 and a running `llama-server`
+(for example `llama-server -m /path/to/model.gguf`, default port 8080). The
+script finds the server, writes the `plugins` entry into your global
+`opencode.jsonc` (backing the file up first), restarts OpenCode, and prints what
+it found. After that, pick the `llama` model in the model picker.
+
+If anything looks wrong:
+
+```bash
+./install.sh --doctor
+```
+
+## Advanced install
+
+### Requirements
+
+- OpenCode v2 (check with `opencode --version`). V1 plugins do not run in V2.
+- A running `llama-server`:
 
   ```bash
   llama-server -m /path/to/model.gguf --port 8080
   ```
 
 - `git` (or download the repository as a ZIP).
+- `curl` and `python3` for `install.sh` (present on almost every Linux/WSL/macOS
+  install; `python3` is only used to edit the config safely).
+
+### install.sh options
+
+`./install.sh` detects the server, updates the config, and restarts OpenCode.
+All flags are optional.
+
+| Flag | Purpose |
+|---|---|
+| `--url URL` | Skip detection and use this server (root or `…/v1`) |
+| `--dry-run` | Show the change without writing or restarting |
+| `--doctor` | Print diagnostics (OpenCode version, config, ports, WSL, log) |
+| `--config FILE` | Edit a specific config file |
+| `--plugin-dir DIR` | Register a different clone |
+| `--provider-id ID` | Provider ID (default `llama`) |
+| `--yes` | Unattended: pick the first match and restart |
+| `--no-restart` | Leave the OpenCode service alone |
+
+Examples:
+
+```bash
+./install.sh --url http://127.0.0.1:8090/v1   # fix a non-default port
+./install.sh --dry-run                        # preview the config change
+./install.sh --doctor                         # why is nothing showing up?
+./install.sh --yes --no-restart               # unattended, no service restart
+```
+
+How detection works: it reads running `llama-server` command lines and probes
+common ports, but accepts a port only when `/props` returns llama.cpp JSON, so
+an unrelated service on 8080 is ignored. If detection fails, start
+`llama-server` first or pass `--url`.
+
+On WSL, a server running on the Windows side must listen on all interfaces
+(`--host 0.0.0.0`) and be allowed through the Windows firewall for WSL to reach
+it; the script explains this when it detects WSL.
 
 ### Config file locations
 
@@ -63,7 +124,9 @@ Notes:
 - Project config is `opencode.json(c)` or `.opencode/opencode.json(c)` in the
   project directory.
 
-### Option A — plugin entry in your config (recommended)
+### Manual option A — plugin entry in your config
+
+Use this if you do not want to run `install.sh`.
 
 1. Clone the repository anywhere:
 
@@ -86,12 +149,13 @@ Notes:
    }
    ```
 
-### Option B — auto-load directory (single file)
+### Manual option B — auto-load directory (single file)
 
 Copy `src/index.ts` to the global plugin directory for your platform (see the
 table above), as `llamacpp-discover.ts`. OpenCode loads files from that
 directory automatically, so no config entry is needed. Do not use both options
-at once, or the plugin loads twice.
+at once, or the plugin loads twice. This only works with the default base URL
+(`http://127.0.0.1:8080/v1`); for any other port use option A.
 
 ### Verify
 
@@ -110,10 +174,14 @@ at once, or the plugin loads twice.
 
 ### Update and uninstall
 
-- Update: `git pull` in the clone (Option A) or copy `src/index.ts` again
-  (Option B), then restart OpenCode (`opencode service restart`).
-- Uninstall: remove the `plugins` entry or the copied file, then restart.
-  The plugin never writes to your config, so nothing else needs cleaning up.
+- Update with `install.sh`: `git pull` in the clone, then run `./install.sh`
+  again (it reuses the existing entry) or just `opencode service restart`.
+- Update a manual install: `git pull` (option A) or copy `src/index.ts` again
+  (option B), then restart OpenCode.
+- Uninstall: remove the `plugins` entry (option A) or the copied file
+  (option B), then restart. The plugin never writes to your config, so nothing
+  else needs cleaning up.
+
 
 ### Troubleshooting
 
@@ -126,7 +194,12 @@ at once, or the plugin loads twice.
   (`ip route show default | awk '{print $3}'`) or make llama-server listen on
   `0.0.0.0` and allow it through the Windows firewall.
 - **Model changed but OpenCode still shows the old one** — run `/llama-refresh`.
-- **Plugin seems inactive** — make sure `disabled` is not set to `true`.
+- **Plugin seems inactive** — make sure `disabled` is not set to `true`, that the
+  config uses the V2 `plugins` key (not V1 `plugin`), and that
+  `opencode --version` reports v2. `./install.sh --doctor` checks all of these.
+- **Server sleeps and no models appear** — update to this version: a sleeping
+  (`--sleep-idle-seconds`) server is discovered from `/props` + `/v1/models`
+  metadata instead of being skipped.
 
 ## Configuration
 
@@ -168,7 +241,18 @@ There is no background polling. Discovery runs:
 2. when you run **`/llama-refresh`**,
 3. on config changes (re-applies the cached inventory, no HTTP request).
 
-If the server is unreachable or sleeping, the last known inventory is kept.
+If the server is unreachable, the last known inventory is kept.
+
+### Servers that sleep
+
+llama.cpp can unload an idle model with `--sleep-idle-seconds`. A sleeping
+server still answers `/props` and `/v1/models` with the loaded model's metadata,
+so discovery works normally (the log line says `sleeping: yes`) and OpenCode
+lists the model. llama.cpp loads the weights again on the first request, so no
+wake-up probe is needed.
+
+This is not polled either. If the server goes to sleep after startup, the model
+list stays valid; if you change the model, run `/llama-refresh`.
 
 ## How thinking levels are detected
 

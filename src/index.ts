@@ -35,8 +35,7 @@ type Options = {
 }
 
 type ProbeState =
-  | { state: "ok"; models: ModelProbe[]; props: PropsInfo; version: string | null }
-  | { state: "sleeping"; note: string }
+  | { state: "ok"; models: ModelProbe[]; props: PropsInfo; version: string | null; sleeping: boolean }
   | { state: "down"; errors: string[] }
 
 type ModelProbe = {
@@ -615,6 +614,7 @@ const summarize = (state: ProbeState, merged: ModelRecord[], path: "created" | "
     ` [ctx ${state.props.nCtx ?? "?"}, thinking ${describeContract(state.props.template)}` +
     `${aliases.length ? `, alias ${aliases.join(", ")}` : ""}` +
     `, vision ${state.props.vision ? "yes" : "no"}, tools ${state.props.toolCalls ? "yes" : "no"}` +
+    `${state.sleeping ? ", sleeping" : ""}` +
     `, version ${state.version ?? "?"}]`
   )
 }
@@ -704,7 +704,11 @@ const apply = (
  *     props failed + models bad → "down" with every collected error
  *     models failed (props OK)  → "down" with the models error (there is
  *                                  nothing to register — recorded decision)
- * - props OK + is_sleeping      → "sleeping" (keep last inventory)
+ * - props OK + is_sleeping      → "ok" (llama.cpp keeps serving /props and
+ *                                 /v1/models metadata while idle-sleeping;
+ *                                 the model is lazily loaded on the first
+ *                                 request, so registration must not be gated
+ *                                 on the sleep flag)
  * - /version is informational only (never gates); its failure yields
  *   version: null, which falls back to props' `build_info` (this llama.cpp
  *   build has no /version route — it 404s; recorded 2026-10-16).
@@ -748,9 +752,8 @@ const probe = (options: Options): Effect.Effect<ProbeState> =>
         models: arr(readField<unknown>(modelsRes.success, "data")).map((d) => parseModel(d)),
         props: emptyProps(),
         version: versionOf(versionRes, null),
+        sleeping: false,
       }
-    if (readField<boolean>(propsRes.success, "is_sleeping") === true)
-      return { state: "sleeping", note: "server is sleeping (slot idle)" }
 
     const props = parseProps(propsRes.success)
     return {
@@ -758,6 +761,7 @@ const probe = (options: Options): Effect.Effect<ProbeState> =>
       models: withModelPaths(arr(readField<unknown>(modelsRes.success, "data")).map((d) => parseModel(d)), propsRes.success),
       props,
       version: versionOf(versionRes, propsRes.success),
+      sleeping: props.isSleeping,
     }
   })
 
@@ -772,8 +776,9 @@ const versionOf = (versionRes: Result.Result<unknown, ProbeError>, propsRaw: unk
 
 /**
  * One refresh: probe → log a discovery summary. The Inventory cache is
- * updated on success and NEVER cleared on failure (sleeping or
- * unreachable keeps the last good inventory; nothing is wiped).
+ * updated on success and NEVER cleared on failure (unreachable keeps the
+ * last good inventory; nothing is wiped). An idle-sleeping server is a
+ * success: its metadata is still served.
  *
  * Tasks 03–05 take over from here: describe → merge → apply, and the
  * startup-fork / `/llama-refresh` / `config.updated` triggers.
@@ -795,9 +800,14 @@ const runRefresh = (ctx: Ctx, options: Options): Effect.Effect<string> =>
         aliases: aliases.length > 0 ? aliases.join(",") : "-",
         vision: state.props.vision ? "yes" : "no",
         tools: state.props.toolCalls ? "yes" : "no",
+        sleeping: state.sleeping ? "yes" : "no",
         version: state.version ?? "?",
         partial: state.props.template === null && state.props.nCtx === null,
       })
+      if (state.sleeping)
+        yield* Effect.logInfo(
+          "[llamacpp-discover] server is idle-sleeping — registering from /props + /v1/models metadata; llama.cpp loads the model on the first request",
+        )
       if (discovered.length === 0) {
         // Server up but no model loaded → keep last inventory.
         yield* Effect.logWarning("[llamacpp-discover] server up but no models loaded — keeping last inventory")
@@ -815,11 +825,6 @@ const runRefresh = (ctx: Ctx, options: Options): Effect.Effect<string> =>
       const summary = yield* apply(ctx, merged, state, existing, options, warnings)
       inventory.current = { state, at: Date.now(), discoveredModels: discovered }
       return summary
-    } else if (state.state === "sleeping") {
-      yield* Effect.logWarning(
-        `[llamacpp-discover] ${state.note} — keeping last inventory${inventory.current ? ` (from ${new Date(inventory.current.at).toISOString()})` : " (none yet)"}`,
-      )
-      return "kept last inventory (sleeping)"
     } else {
       yield* Effect.logWarning(
         `[llamacpp-discover] unreachable (${state.errors.join("; ")}) — keeping last inventory${inventory.current ? ` (from ${new Date(inventory.current.at).toISOString()})` : " (none yet)"}`,
