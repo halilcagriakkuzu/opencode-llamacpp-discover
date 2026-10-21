@@ -41,6 +41,28 @@ only covered by fixtures, not by real servers.
 
 - `git` (or download the repository as a ZIP).
 
+### Config file locations
+
+OpenCode uses the same XDG-style layout on every platform; only the home
+directory differs. Pick the row for your system:
+
+| Platform | Global config | Global plugin directory |
+|---|---|---|
+| Linux | `~/.config/opencode/opencode.jsonc` | `~/.config/opencode/plugins/` |
+| WSL | `~/.config/opencode/opencode.jsonc` (inside the WSL distro) | `~/.config/opencode/plugins/` |
+| macOS | `~/.config/opencode/opencode.jsonc` | `~/.config/opencode/plugins/` |
+| Windows | `%USERPROFILE%\.config\opencode\opencode.jsonc` | `%USERPROFILE%\.config\opencode\plugins\` |
+
+Notes:
+
+- If `XDG_CONFIG_HOME` is set, use `$XDG_CONFIG_HOME/opencode/` instead of
+  `~/.config/opencode/`.
+- `opencode.json` works too — OpenCode accepts both JSON and JSONC.
+- On WSL, edit the file inside the Linux home (`echo $HOME`), **not** the
+  Windows-side `C:\Users\...` path. The two are separate OpenCode installs.
+- Project config is `opencode.json(c)` or `.opencode/opencode.json(c)` in the
+  project directory.
+
 ### Option A — plugin entry in your config (recommended)
 
 1. Clone the repository anywhere:
@@ -49,9 +71,9 @@ only covered by fixtures, not by real servers.
    git clone https://github.com/halilcagriakkuzu/opencode-llamacpp-discover.git
    ```
 
-2. Add it to your OpenCode config (global `~/.config/opencode/opencode.jsonc`
-   or a project `opencode.json`) using the **absolute path** of the clone.
-   This works the same on Linux, macOS and Windows:
+2. Add it to your OpenCode config using the **absolute path** of the clone.
+   Use forward slashes even on Windows (`C:/Users/you/...`) or an escaped
+   backslash path:
 
    ```jsonc
    {
@@ -66,9 +88,10 @@ only covered by fixtures, not by real servers.
 
 ### Option B — auto-load directory (single file)
 
-Copy `src/index.ts` to `~/.config/opencode/plugins/llamacpp-discover.ts`.
-OpenCode loads files from that directory automatically, so no config entry is
-needed. Do not use both options at once, or the plugin loads twice.
+Copy `src/index.ts` to the global plugin directory for your platform (see the
+table above), as `llamacpp-discover.ts`. OpenCode loads files from that
+directory automatically, so no config entry is needed. Do not use both options
+at once, or the plugin loads twice.
 
 ### Verify
 
@@ -81,8 +104,9 @@ needed. Do not use both options at once, or the plugin loads twice.
    Otherwise just quit and start OpenCode again.
 2. Open the model picker: the `llama` provider should list the model loaded in
    llama-server, with its real context size and thinking variants.
-3. Look for a `[llamacpp-discover]` summary line in the OpenCode log
-   (`~/.local/share/opencode/log/` on Linux).
+3. Look for a `[llamacpp-discover]` summary line in the OpenCode log:
+   - Linux/macOS/WSL: `~/.local/share/opencode/log/opencode.log`
+   - Windows: `%USERPROFILE%\.local\share\opencode\log\opencode.log`
 
 ### Update and uninstall
 
@@ -97,6 +121,10 @@ needed. Do not use both options at once, or the plugin loads twice.
   (`curl http://127.0.0.1:8080/props`) and that the port matches.
   The default port is 8080; use `baseURL` or `LLAMACPP_DISCOVER_BASE_URL`
   for anything else.
+- **WSL: llama-server runs on Windows** — `127.0.0.1` inside WSL may not reach
+  a server bound to Windows. Use the Windows host IP
+  (`ip route show default | awk '{print $3}'`) or make llama-server listen on
+  `0.0.0.0` and allow it through the Windows firewall.
 - **Model changed but OpenCode still shows the old one** — run `/llama-refresh`.
 - **Plugin seems inactive** — make sure `disabled` is not set to `true`.
 
@@ -116,7 +144,11 @@ Precedence: plugin `options` > environment variables > defaults.
 Example using an environment variable (llama-server on port 8090):
 
 ```bash
-export LLAMACPP_DISCOVER_BASE_URL=http://127.0.0.1:8090/v1
+export LLAMACPP_DISCOVER_BASE_URL=http://127.0.0.1:8090/v1   # Linux/macOS/WSL
+```
+
+```powershell
+$env:LLAMACPP_DISCOVER_BASE_URL = "http://127.0.0.1:8090/v1"  # Windows PowerShell
 ```
 
 or in the config, via OpenCode's variable substitution:
@@ -126,7 +158,7 @@ or in the config, via OpenCode's variable substitution:
 ```
 
 Per-project overrides: put a different `options` block in the project's
-`opencode.json`.
+`opencode.json(c)` (or `.opencode/opencode.json(c)`).
 
 ## Refreshing
 
